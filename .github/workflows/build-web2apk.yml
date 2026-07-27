@@ -1,0 +1,79 @@
+# web2apk-workflow-template.yml
+#
+# Workflow ini dipakai KHUSUS oleh fitur Web2APK di Wanzz Deploy. Kamu
+# TIDAK PERLU copy file ini manual — Wanzz Deploy otomatis push file ini
+# (plus pubspec.yaml, lib/main.dart, dan assets/icon.png yang sudah
+# di-generate sesuai isian kamu) ke repo baru saat kamu klik tombol
+# "Buat & Build APK" di halaman Web2APK.
+#
+# Cara kerja workflow ini:
+# 1. Checkout repo (isinya pubspec.yaml, lib/main.dart, assets/icon.png
+#    yang sudah disiapkan Wanzz Deploy — main.dart berisi WebView yang
+#    memuat URL website kamu).
+# 2. `flutter create --platforms android .` — melengkapi folder
+#    android/ (Gradle, Manifest, dsb) TANPA menimpa pubspec.yaml /
+#    lib/main.dart yang sudah ada (ini perilaku resmi Flutter untuk
+#    menambah platform ke project yang sudah ada).
+# 3. Tambah izin INTERNET ke AndroidManifest (wajib supaya WebView bisa
+#    akses internet).
+# 4. flutter pub get, lalu flutter_launcher_icons menerapkan
+#    assets/icon.png sebagai ikon aplikasi ke semua resolusi Android.
+# 5. Build APK release, upload sebagai artifact.
+
+name: Build Web2APK (Wanzz Deploy)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable channel terbaru)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Lengkapi folder platform Android
+        run: flutter create --platforms android .
+
+      - name: Tambah izin INTERNET ke AndroidManifest
+        run: |
+          python3 - <<'PYEOF'
+          import re
+
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path, "r") as f:
+              content = f.read()
+
+          if "android.permission.INTERNET" not in content:
+              content = re.sub(
+                  r"(<manifest[^>]*>)",
+                  r'\1\n    <uses-permission android:name="android.permission.INTERNET"/>',
+                  content,
+                  count=1,
+              )
+              with open(path, "w") as f:
+                  f.write(content)
+              print("Izin INTERNET ditambahkan.")
+          else:
+              print("Izin INTERNET sudah ada, tidak diubah.")
+          PYEOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Terapkan ikon custom
+        run: flutter pub run flutter_launcher_icons
+
+      - name: Build APK (release)
+        run: flutter build apk --release
+
+      - name: Upload APK sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
